@@ -1,0 +1,24 @@
+seed: 0
+exp:
+  run: 'clean'
+  num_epochs: 200
+  debug: false
+  wandb: true
+
+model:
+  resume: false
+
+data:
+  dataset: 'Waterbirds'
+  test_dataset: 'Waterbirds'
+  batch_size: 256
+  root: '/shared/lisabdunlap/vl-attention/data'
+
+hps:
+  lr: 0.001
+  weight_decay: 5e-5
+
+noise:
+  p: 0.1
+  method: noop
+  clean_val: false

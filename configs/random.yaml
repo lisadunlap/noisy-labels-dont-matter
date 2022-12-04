@@ -1,0 +1,20 @@
+seed: 0
+exp:
+  run: 'random-noisy-val-5'
+  num_epochs: 200
+  debug: false
+  wandb: true
+
+data:
+  dataset: 'Waterbirds'
+  batch_size: 256
+  root: '/shared/lisabdunlap/vl-attention/data'
+
+hps:
+  lr: 0.001
+  weight_decay: 5e-5
+
+noise:
+  p: 0.05
+  method: random
+  clean_val: false

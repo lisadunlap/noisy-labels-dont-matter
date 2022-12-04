@@ -1,0 +1,19 @@
+seed: 0
+prop_val: 0.5
+method: 'oracle'
+exp:
+  run: 'sanity-check-oracle'
+  num_epochs: 200
+  ft_num_epochs: 50
+  debug: false
+  wandb: true
+
+data:
+  dataset: 'Imagenette'
+  test_dataset: 'Imagenette'
+  batch_size: 256
+  root: '/shared/lisabdunlap/vl-attention/data'
+
+hps:
+  lr: 0.001
+  weight_decay: 5e-5
