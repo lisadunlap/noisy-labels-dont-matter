@@ -55,9 +55,15 @@ labels = np.array(train_set.labels) == np.array(train_set.clean_labels)
 p = args.noise.p if args.noise.method != 'noop' else 0
 print(f"Training {args.exp.run} on {args.data.dataset} with {p*100}% {args.noise.method} noise ({len(labels[labels == False])}/{len(labels)})")
 
-model = resnet50(weights=ResNet50_Weights.DEFAULT).cuda()
+pretrained_weights = weights=ResNet50_Weights.IMAGENET1K_V2 if args.model.ft else ResNet50_Weights.DEFAULT
+model = resnet50(weights=pretrained_weights).cuda()
 num_classes, dim = model.fc.weight.shape
 model.fc = nn.Linear(dim, len(train_set.classes)).cuda()
+for name, param in model.named_parameters():
+    if "fc" in name or not args.model.ft:
+        param.requires_grad = True
+    else:
+        param.requires_grad = False
 model = nn.DataParallel(model).cuda()
 
 
