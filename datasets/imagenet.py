@@ -53,3 +53,15 @@ class ImagenetVal:
     
     def __len__(self):
         return len(self.metadata)
+
+class ImagenetA(ImageFolder):
+    """
+    Imagenet-A dataset
+    """
+    def __init__(self, root, transform=None):
+        super().__init__(root, transform)
+        self.map = indices_in_1k
+
+    def __getitem__(self, idx):
+        img, label = super().__getitem__(idx)
+        return img, label, 0, idx

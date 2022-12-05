@@ -1,6 +1,6 @@
 seed: 0
 exp:
-  run: 'clean-imagenette'
+  run: 'clean-imagenette-woof'
   num_epochs: 200
   debug: false
   wandb: true
@@ -9,8 +9,8 @@ model:
   resume: false
 
 data:
-  dataset: 'Imagenette'
-  test_dataset: 'Imagenette'
+  dataset: 'ImagenetteWoof'
+  test_dataset: 'ImagenetteWoof'
   batch_size: 256
   root: '/shared/lisabdunlap/data'
 

@@ -14,7 +14,7 @@ import argparse
 import wandb
 
 from utils import read_unknowns, nest_dict, flatten_config
-from datasets.waterbirds import Waterbirds
+from datasets.get_dataset import get_dataset
 from datasets.base import BaseDataset
 from utils import evaluate
 import methods
@@ -43,16 +43,21 @@ np.random.seed(args.seed)
 if not args.exp.wandb:
     os.environ['WANDB_SILENT']="true"
 
-wandb.init(entity='lisadunlap', project='noisy_labels_dont_matter', name=args.exp.run, config=flatten_config(args))
+run = f"{args.exp.run}-debug" if args.exp.debug else args.exp.run
+wandb.init(entity='lisadunlap', project='noisy_labels_dont_matter', name=run, config=flatten_config(args))
 
-train_set = BaseDataset(Waterbirds(root=args.data.root, split='train'), args)
-val_set = BaseDataset(Waterbirds(root=args.data.root, split='val'), args, clean=args.noise.clean_val)
-test_set = BaseDataset(Waterbirds(root=args.data.root, split='test'), args, clean=True)
+train_set = BaseDataset(get_dataset(args.data.dataset, cfg=args, split='train'), args)
+val_set = BaseDataset(get_dataset(args.data.dataset, cfg=args, split='val'), args, clean=args.noise.clean_val)
+test_set = BaseDataset(get_dataset(args.data.test_dataset, cfg=args, split='test'), args, clean=True)
 weights = train_set.class_weights
+
+labels = np.array(train_set.labels) == np.array(train_set.clean_labels)
+p = args.noise.p if args.noise.method != 'noop' else 0
+print(f"Training {args.exp.run} on {args.data.dataset} with {p*100}% {args.noise.method} noise ({len(labels[labels == False])}/{len(labels)})")
 
 model = resnet50(weights=ResNet50_Weights.DEFAULT).cuda()
 num_classes, dim = model.fc.weight.shape
-model.fc = nn.Linear(dim, 2).cuda()
+model.fc = nn.Linear(dim, len(train_set.classes)).cuda()
 model = nn.DataParallel(model).cuda()
 
 
@@ -61,7 +66,7 @@ trainloader = torch.utils.data.DataLoader(
 valloader = torch.utils.data.DataLoader(
         val_set, batch_size=args.data.batch_size, shuffle=False, num_workers=2)
 testloader = torch.utils.data.DataLoader(
-        test_set, batch_size=args.data.batch_size, shuffle=False, num_workers=1)
+        test_set, batch_size=args.data.batch_size, shuffle=False, num_workers=2)
 
 class_criterion = nn.CrossEntropyLoss(weight=weights.cuda())
 m = nn.Softmax(dim=1)
@@ -108,17 +113,21 @@ def train_val_loop(loader, epoch, phase="train", best_acc=0):
 
     if phase == 'val' and balanced_acc > best_acc:
         best_acc = balanced_acc
-        save_checkpoint(model, balanced_acc, epoch)
+        if not args.exp.debug:
+            save_checkpoint(model, balanced_acc, group_accuracy, epoch)
         wandb.summary[f'best {phase} acc'] = balanced_acc
+        wandb.summary[f'best {phase} group acc'] = group_accuracy
     elif phase == 'test':
         wandb.summary[f'{phase} acc'] = balanced_acc
+        wandb.summary[f'{phase} group acc'] = group_accuracy
     return best_acc if phase == 'val' else balanced_acc
 
 
-def save_checkpoint(model, acc, epoch):
+def save_checkpoint(model, acc, group_accuracy, epoch):
     print(f'Saving checkpoint with acc {acc} to ./checkpoint/{args.data.dataset}/{args.exp.run}/model_best.pth.pth')
     state = {
         "acc": acc,
+        "group_acc": group_accuracy,
         "epoch": epoch,
         "net": model.module.state_dict()
     }
@@ -126,10 +135,24 @@ def save_checkpoint(model, acc, epoch):
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     torch.save(state, f'{checkpoint_dir}/model_best.pth')
+    torch.save(state, f'{checkpoint_dir}/model_best-{epoch}.pth')
+    wandb.save(f'{checkpoint_dir}/model_best.pth')
+    wandb.save(f'{checkpoint_dir}/model_best-{epoch}.pth')
 
-def load_checkpoint(model):
-    path = f'./checkpoint/{args.data.dataset}/{args.exp.run}/model_best.pth'
+def load_checkpoint(model, epoch=0):
+    if epoch == 0:
+        path = f'./checkpoint/{args.data.dataset}/{args.exp.run}/model_best.pth'
+    else:
+        path = f'./checkpoint/{args.data.dataset}/{args.exp.run}/model_best-{epoch}.pth'
     checkpoint = torch.load(path)
+    if args.model.resume:
+        wandb.summary['best val acc'] = checkpoint['acc']
+        try:
+            wandb.summary['best val group acc'] = checkpoint['group_acc']
+            wandb.summary['val group acc'] = checkpoint['group_acc']
+        except:
+            pass
+        wandb.summary['epoch'] = checkpoint['epoch']
     model.module.load_state_dict(checkpoint['net'])
     print(f"...loaded checkpoint with acc {checkpoint['acc']}")
 
@@ -141,6 +164,7 @@ if not args.model.resume:
         best_val_acc = train_val_loop(valloader, epoch, phase="val", best_acc=best_val_acc)
         print(f"Epoch {epoch} val acc: {best_val_acc}")
 
-load_checkpoint(model)
+if not args.exp.debug:
+    load_checkpoint(model)
 test_acc = train_val_loop(testloader, 0, phase="test")
 print(f"Test acc: {test_acc}")

@@ -17,10 +17,30 @@ class Imagenette(ImageFolder):
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
 
-    def __init__(self, root, cfg, transform=transform, split='train'):
-        assert split != 'test', "Imagenette does not have a test set"
-        super().__init__(os.path.join(root, split), transform)
+    def __init__(self, root, cfg, transform=transform, split='train', type='imagenette2'):
+        s = 'train' if split == 'train' else 'val'
+        super().__init__(os.path.join(root, type, s), transform)
+        self.split = split
         self.cfg = cfg
+        if split == 'val':
+            sample_idxs = [i for i in range(len(self.samples)) if i % 2 == 0]
+        elif split == 'test':
+            sample_idxs = [i for i in range(len(self.samples)) if i % 2 == 1]
+        else:
+            sample_idxs = [i for i in range(len(self.samples))]
+        self.samples = [self.samples[i] for i in sample_idxs]
+        self.labels = [s[1] for s in self.samples]
+
+class ImagenetteWoof(Imagenette):
+
+    transform = transforms.Compose([
+            transforms.Resize((224,224)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ])
+
+    def __init__(self, root, cfg, transform=transform, split='train', type='imagewoof2'):
+        super().__init__(root, cfg, transform, split, type)
 
 class NoisyImagenette(Imagenette):
 
@@ -30,8 +50,8 @@ class NoisyImagenette(Imagenette):
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
 
-    def __init__(self, root, cfg, transform=transform, split='train'):
-        super().__init__(root, cfg, transform)
+    def __init__(self, root, cfg, transform=transform, split='train', type='imagenette2'):
+        super().__init__(root, cfg=cfg, transform=transform, type=type)
         assert self.cfg.noise.p in [0, 0.01, 0.05, 0.25, 0.50], "Noise level not supported"
         self.df = pd.read_csv(os.path.join(root, 'noisy_imagenette.csv'))
         is_valid = True if split == 'val' else False
@@ -39,6 +59,18 @@ class NoisyImagenette(Imagenette):
         self.labels = self.df[f"noisy_labels_{self.cfg.noise.p}"].tolist()
         self.image_paths = [path.replace('val/', '').replace('train/', '') for path in self.df['path']]
         self.samples = list(zip(self.df['path'].tolist(), self.labels))
+
+class ImagenetteC(ImageFolder):
+
+    transform = transforms.Compose([
+            transforms.Resize((224,224)),
+            transforms.ToTensor(),
+        ])
+
+    def __init__(self, root, cfg, transform=transform, split='test', corruption='glass_blur', severity=1):
+        super().__init__(os.path.join(root, 'imagenette-c', corruption, str(severity)), transform=transform)
+        self.cfg = cfg
+        self.labels = [s[1] for s in self.samples]
 
 # class ImagenetteA(ImageFolder):
 #     """

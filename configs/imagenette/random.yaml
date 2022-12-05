@@ -1,7 +1,7 @@
 seed: 0
 exp:
-  run: 'clean-imagenette'
-  num_epochs: 200
+  run: 'random-5-imagenette'
+  num_epochs: 50
   debug: false
   wandb: true
 
@@ -20,5 +20,5 @@ hps:
 
 noise:
   p: 0.05
-  method: noop
+  method: random
   clean_val: false

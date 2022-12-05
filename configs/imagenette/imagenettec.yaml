@@ -6,13 +6,14 @@ exp:
   wandb: true
 
 model:
-  resume: false
+  resume: true
 
 data:
   dataset: 'Imagenette'
-  test_dataset: 'Imagenette'
+  test_dataset: 'ImagenetteC'
   batch_size: 256
   root: '/shared/lisabdunlap/data'
+  imagenetc_corruption: 'glass_blur'
 
 hps:
   lr: 0.01

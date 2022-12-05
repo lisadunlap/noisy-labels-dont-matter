@@ -1,6 +1,6 @@
 seed: 0
 exp:
-  run: 'clean-imagenette'
+  run: 'random-imagenettec-5'
   num_epochs: 200
   debug: false
   wandb: true
@@ -10,9 +10,10 @@ model:
 
 data:
   dataset: 'Imagenette'
-  test_dataset: 'Imagenette'
+  test_dataset: 'ImagenetteC'
   batch_size: 256
   root: '/shared/lisabdunlap/data'
+  imagenetc_corruption: 'glass_blur'
 
 hps:
   lr: 0.01
