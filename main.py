@@ -49,13 +49,14 @@ wandb.init(entity='lisadunlap', project='noisy_labels_dont_matter', name=run, co
 train_set = BaseDataset(get_dataset(args.data.dataset, cfg=args, split='train'), args)
 val_set = BaseDataset(get_dataset(args.data.dataset, cfg=args, split='val'), args, clean=args.noise.clean_val)
 test_set = BaseDataset(get_dataset(args.data.test_dataset, cfg=args, split='test'), args, clean=True)
+# clean_val_set = BaseDataset(get_dataset(args.data.dataset, cfg=args, split='val'), args, clean=True)
 weights = train_set.class_weights
 
 labels = np.array(train_set.labels) == np.array(train_set.clean_labels)
 p = args.noise.p if args.noise.method != 'noop' else 0
 print(f"Training {args.exp.run} on {args.data.dataset} with {p*100}% {args.noise.method} noise ({len(labels[labels == False])}/{len(labels)})")
 
-pretrained_weights = weights=ResNet50_Weights.IMAGENET1K_V2 if args.model.ft else ResNet50_Weights.DEFAULT
+pretrained_weights =ResNet50_Weights.IMAGENET1K_V2 if args.model.ft else ResNet50_Weights.DEFAULT
 model = resnet50(weights=pretrained_weights).cuda()
 num_classes, dim = model.fc.weight.shape
 model.fc = nn.Linear(dim, len(train_set.classes)).cuda()
@@ -73,6 +74,8 @@ valloader = torch.utils.data.DataLoader(
         val_set, batch_size=args.data.batch_size, shuffle=False, num_workers=2)
 testloader = torch.utils.data.DataLoader(
         test_set, batch_size=args.data.batch_size, shuffle=False, num_workers=2)
+# clean_val_loader = torch.utils.data.DataLoader(
+#         clean_val_set, batch_size=args.data.batch_size, shuffle=False, num_workers=2)
 
 class_criterion = nn.CrossEntropyLoss(weight=weights.cuda())
 m = nn.Softmax(dim=1)
@@ -119,18 +122,21 @@ def train_val_loop(loader, epoch, phase="train", best_acc=0):
 
     if phase == 'val' and balanced_acc > best_acc:
         best_acc = balanced_acc
-        if not args.exp.debug:
-            save_checkpoint(model, balanced_acc, group_accuracy, epoch)
+        if (not args.exp.debug) and (not args.noise.clean_val) and (args.model.resume_epoch == 'best'):
+            save_checkpoint(model, balanced_acc, group_accuracy, epoch, best=True)
         wandb.summary[f'best {phase} acc'] = balanced_acc
         wandb.summary[f'best {phase} group acc'] = group_accuracy
+        wandb.summary[f'best {phase} epoch'] = epoch
+    elif phase == 'val' and epoch % args.model.save_every == 0:
+        if (not args.exp.debug) and (not args.noise.clean_val) and (args.model.resume_epoch == 'best'):
+            save_checkpoint(model, balanced_acc, group_accuracy, epoch)
     elif phase == 'test':
         wandb.summary[f'{phase} acc'] = balanced_acc
         wandb.summary[f'{phase} group acc'] = group_accuracy
     return best_acc if phase == 'val' else balanced_acc
 
 
-def save_checkpoint(model, acc, group_accuracy, epoch):
-    print(f'Saving checkpoint with acc {acc} to ./checkpoint/{args.data.dataset}/{args.exp.run}/model_best.pth.pth')
+def save_checkpoint(model, acc, group_accuracy, epoch, best=False):
     state = {
         "acc": acc,
         "group_acc": group_accuracy,
@@ -140,16 +146,25 @@ def save_checkpoint(model, acc, group_accuracy, epoch):
     checkpoint_dir = f'./checkpoint/{args.data.dataset}/{args.exp.run}'
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
-    torch.save(state, f'{checkpoint_dir}/model_best.pth')
-    torch.save(state, f'{checkpoint_dir}/model_best-{epoch}.pth')
-    wandb.save(f'{checkpoint_dir}/model_best.pth')
-    wandb.save(f'{checkpoint_dir}/model_best-{epoch}.pth')
+    if best:
+        checkpoint_path = f'{checkpoint_dir}/model_best.pth'
+        torch.save(state, f'{checkpoint_dir}/model_best.pth')
+        wandb.save(f'{checkpoint_dir}/model_best.pth')
+    else:
+        checkpoint_path = f'{checkpoint_dir}/model_{epoch}.pth'
+    print(f'Saving checkpoint with acc {acc} to {checkpoint_path}')
+    torch.save(state, f'{checkpoint_dir}/model_{epoch}.pth')
+    wandb.save(f'{checkpoint_dir}/model_{epoch}.pth')
 
-def load_checkpoint(model, epoch=0):
-    if epoch == 0:
+def get_model_path(epoch=-1):
+    if epoch == -1:
         path = f'./checkpoint/{args.data.dataset}/{args.exp.run}/model_best.pth'
     else:
-        path = f'./checkpoint/{args.data.dataset}/{args.exp.run}/model_best-{epoch}.pth'
+        path = f'./checkpoint/{args.data.dataset}/{args.exp.run}/model_{epoch}.pth'
+    return path 
+
+def load_checkpoint(model, epoch=-1):
+    path = get_model_path(epoch)
     checkpoint = torch.load(path)
     if args.model.resume:
         wandb.summary['best val acc'] = checkpoint['acc']
@@ -159,18 +174,52 @@ def load_checkpoint(model, epoch=0):
         except:
             pass
         wandb.summary['epoch'] = checkpoint['epoch']
+        if epoch==-1:
+            wandb.summary['best val epoch'] = checkpoint['epoch']
     model.module.load_state_dict(checkpoint['net'])
-    print(f"...loaded checkpoint with acc {checkpoint['acc']}")
+    print(f"...loaded checkpoint from epoch {checkpoint['epoch']} with acc {checkpoint['acc']}")
+    return checkpoint['epoch']
 
-if not args.model.resume:
+def get_clean_val_acc(model):
+    """
+    Given a directory of model checkpoints, check which one would be used if given a clean validation set. 
+    Returns the best validation accuracy and the corresponding test accuracy, as well as the best epoch.
+    """
+    best_val_acc, best_val_epoch = 0, 0
+    for epoch in range(args.exp.num_epochs):
+        try:
+            checkpoint_epoch = load_checkpoint(model, epoch)
+        except:
+            raise ValueError(f"Could not load checkpoint for epoch {epoch}")
+        old_best_val_acc = best_val_acc
+        best_val_acc = train_val_loop(valloader, epoch, phase="val", best_acc=best_val_acc)
+        print(f"Old val acc = {old_best_val_acc}, new val acc = {best_val_acc}")
+        if best_val_acc > old_best_val_acc:
+            best_val_epoch = epoch
+        print(f"Epoch {epoch} clean val acc: {best_val_acc}")
+    return best_val_acc, best_val_epoch
+
+
+if (not args.model.resume) and (not args.noise.clean_val):
     best_val_acc, best_test_acc, best_val_epoch = 0, 0, 0
     num_epochs = args.exp.num_epochs if not args.exp.debug else 1
     for epoch in range(num_epochs):
         train_acc = train_val_loop(trainloader, epoch, phase="train")
         best_val_acc = train_val_loop(valloader, epoch, phase="val", best_acc=best_val_acc)
         print(f"Epoch {epoch} val acc: {best_val_acc}")
+    if not args.exp.debug:
+        best_checkpoint = load_checkpoint(model)
+else:
+    resume_epoch = args.model.resume_epoch if args.model.resume_epoch != 'best' else -1
+    if args.noise.clean_val and args.model.resume_epoch != 'best':
+        if not os.path.exists(get_model_path()):
+            raise ValueError(f"Could not find checkpoint for {args.exp.run}, clean eval only works for saved checkpoints.")
+        resume_epoch = args.model.resume_epoch if args.model.resume_epoch != 'best' else -1
+        if args.model.resume_epoch == 'best':
+            resume_epoch, best_val_epoch = get_clean_val_acc(model)
+            checkpoint_epoch = load_checkpoint(model, epoch=resume_epoch)
+        else:
+            checkpoint_epoch = load_checkpoint(model, epoch=resume_epoch)
 
-if not args.exp.debug:
-    load_checkpoint(model)
 test_acc = train_val_loop(testloader, 0, phase="test")
 print(f"Test acc: {test_acc}")

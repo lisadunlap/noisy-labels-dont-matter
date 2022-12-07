@@ -1,7 +1,7 @@
 seed: 0
 exp:
   run: 'clean-imagenette-woof'
-  num_epochs: 200
+  num_epochs: 50
   debug: false
   wandb: true
 
@@ -15,7 +15,7 @@ data:
   root: '/shared/lisabdunlap/data'
 
 hps:
-  lr: 0.01
+  lr: 0.001
   weight_decay: 5e-5
 
 noise:

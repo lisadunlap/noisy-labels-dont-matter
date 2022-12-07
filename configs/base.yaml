@@ -8,12 +8,15 @@ exp:
 model:
   resume: false
   ft: false
+  save_every: 1
+  resume_epoch: 'best'
 
 data:
   dataset: 'Waterbirds'
   test_dataset: 'Waterbirds'
   batch_size: 256
   root: '/shared/lisabdunlap/vl-attention/data'
+  imagenetc_corruption: 'glass_blur'
 
 hps:
   lr: 0.001

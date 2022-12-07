@@ -44,6 +44,7 @@ class CombinedDataset:
         self.samples = list(np.concatenate([d.samples for d in self.datasets]))
         # what dataset does this sample belong to
         self.dataset_idx = list(np.concatenate([np.full(len(d), i) for i, d in enumerate(self.datasets)]))
+        
         # what the index of that dataset is for this sample
         self.idxs = list(np.concatenate([np.arange(len(d)) for d in self.datasets]))
         if len(self.samples[0]) == 2:

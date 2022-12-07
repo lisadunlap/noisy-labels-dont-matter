@@ -1,7 +1,7 @@
 seed: 0
 exp:
   run: 'clean-imagenette'
-  num_epochs: 200
+  num_epochs: 50
   debug: false
   wandb: true
 
@@ -15,10 +15,10 @@ data:
   root: '/shared/lisabdunlap/data'
 
 hps:
-  lr: 0.01
+  lr: 0.001
   weight_decay: 5e-5
 
 noise:
-  p: 0.05
+  p: 0.00
   method: noop
   clean_val: false
